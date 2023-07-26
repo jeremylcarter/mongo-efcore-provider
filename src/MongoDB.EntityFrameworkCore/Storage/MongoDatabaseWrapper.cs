@@ -155,7 +155,7 @@ public class MongoDatabaseWrapper : Database
     private MongoUpdate? ConvertUpdateEntryToMongoUpdate(IUpdateEntry entry)
     {
         var collectionName = entry.EntityType.GetCollectionName();
-        var id = (string)GetId(entry); // TODO: handle other _id types besides string
+        var id = GetId(entry); // TODO: handle other _id types besides string
 
         return entry.EntityState switch
         {
@@ -168,19 +168,19 @@ public class MongoDatabaseWrapper : Database
         };
     }
 
-    private MongoUpdate ConvertAddedEntryToMongoUpdate(string collectionName, string id, IUpdateEntry entry)
+    private MongoUpdate ConvertAddedEntryToMongoUpdate(string collectionName, object id, IUpdateEntry entry)
     {
         throw new NotImplementedException(); // EF-17
     }
 
-    private MongoUpdate ConvertDeletedEntryToMongoUpdate(string collectionName, string id, IUpdateEntry entry)
+    private MongoUpdate ConvertDeletedEntryToMongoUpdate(string collectionName, object id, IUpdateEntry entry)
     {
-        var filter = new BsonDocument("_id", id);
+        var filter = new BsonDocument("_id", BsonValue.Create(id));
         var model = new DeleteOneModel<BsonDocument>(filter);
         return new MongoUpdate(collectionName, model);
     }
 
-    private MongoUpdate ConvertModifiedEntryToMongoUpdate(string collectionName, string id, IUpdateEntry entry)
+    private MongoUpdate ConvertModifiedEntryToMongoUpdate(string collectionName, object id, IUpdateEntry entry)
     {
         throw new NotImplementedException(); // EF-15
     }
@@ -189,8 +189,17 @@ public class MongoDatabaseWrapper : Database
     {
         var database = _mongoClient.Database;
         var client = database.Client;
-        using var session = client.StartSession();
-        return session.WithTransaction((session, cancellationToken) => SaveMongoUpdates(session, database, updates));
+
+        if (client.Settings.Servers.Count() > 1)
+        {
+            using var session = client.StartSession();
+            return session.WithTransaction((session, cancellationToken) => SaveMongoUpdates(session, database, updates));
+        }
+        else
+        {
+            // This is bad just passing in null (Just hacking to see it in action)
+            return SaveMongoUpdates(null, database, updates);
+        }
     }
 
     private long SaveMongoUpdates(IClientSessionHandle session, IMongoDatabase database, IEnumerable<MongoUpdate> updates)
@@ -199,18 +208,36 @@ public class MongoDatabaseWrapper : Database
         foreach (var batch in BatchUpdatesByCollection(updates))
         {
             var collection = database.GetCollection<BsonDocument>(batch.CollectionName);
-            var result = collection.BulkWrite(session, batch.Models);
-            documentsAffected += result.ModifiedCount;
+            if (session != null)
+            {
+                var result = collection.BulkWrite(session, batch.Models);
+                documentsAffected += result.ModifiedCount;
+            }
+            else
+            {
+                var result = collection.BulkWrite(batch.Models);
+                documentsAffected += result.ModifiedCount;
+            }
         }
         return documentsAffected;
     }
 
-    private async Task<long>SaveMongoUpdatesAsync(IEnumerable<MongoUpdate> updates, CancellationToken cancellationToken)
+    private async Task<long> SaveMongoUpdatesAsync(IEnumerable<MongoUpdate> updates, CancellationToken cancellationToken)
     {
         var database = _mongoClient.Database;
         var client = database.Client;
-        using var session = await client.StartSessionAsync().ConfigureAwait(false);
-        return await session.WithTransactionAsync((session, cancellationToken) => SaveMongoUpdatesAsync(session, database, updates, cancellationToken)).ConfigureAwait(false);
+
+        if (client.Settings.Servers.Count() > 1)
+        {
+            using var session = await client.StartSessionAsync().ConfigureAwait(false);
+            return await session.WithTransactionAsync((session, cancellationToken) => SaveMongoUpdatesAsync(session, database, updates, cancellationToken)).ConfigureAwait(false);
+        }
+        else
+        {
+            // This is bad just passing in null (Just hacking to see it in action)
+            return await SaveMongoUpdatesAsync(null, database, updates, cancellationToken).ConfigureAwait(false);
+        }
+
     }
 
     private async Task<long> SaveMongoUpdatesAsync(IClientSessionHandle session, IMongoDatabase database, IEnumerable<MongoUpdate> updates, CancellationToken cancellationToken)
@@ -219,8 +246,17 @@ public class MongoDatabaseWrapper : Database
         foreach (var batch in BatchUpdatesByCollection(updates))
         {
             var collection = database.GetCollection<BsonDocument>(batch.CollectionName);
-            var result = await collection.BulkWriteAsync(session, batch.Models, cancellationToken: cancellationToken).ConfigureAwait(false);
-            documentsAffected += result.ModifiedCount;
+            if (session != null)
+            {
+                var result = await collection.BulkWriteAsync(session, batch.Models, cancellationToken: cancellationToken).ConfigureAwait(false);
+                documentsAffected += result.ModifiedCount;
+            }
+            else
+            {
+                var result = await collection.BulkWriteAsync(batch.Models, cancellationToken: cancellationToken).ConfigureAwait(false);
+                documentsAffected += result.ModifiedCount;
+            }
+
         }
         return documentsAffected;
     }

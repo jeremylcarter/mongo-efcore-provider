@@ -58,5 +58,11 @@ public static class MongoCollectionExpressionTests
             Assert.Equal(entityType, actual.EntityType);
             Assert.Equal(entityType.GetCollectionName(), actual.CollectionName);
         }
+
+        var product = new Product();
+        product.Name = "Test";
+        product.Price = 1.23m;
+        context.Products.Add(product);
+        context.SaveChanges();
     }
 }

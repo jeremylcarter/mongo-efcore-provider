@@ -13,9 +13,8 @@
  * limitations under the License.
  */
 
-using System.Linq.Expressions;
+using System.ComponentModel.DataAnnotations;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Query;
 using MongoDB.Bson;
 using MongoDB.EntityFrameworkCore.Query.Expressions;
 
@@ -23,8 +22,10 @@ namespace MongoDB.EntityFrameworkCore.Tests.Query.Expressions;
 
 public static class MongoQueryExpressionTests
 {
+    [PrimaryKey("_id")]
     class Product
     {
+        [Key]
         public ObjectId Id { get; set; }
         public string Name { get; set; }
         public decimal Price { get; set; }
